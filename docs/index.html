@@ -344,9 +344,24 @@ function analyzeQuote(text,filename){
   const nameMatch=t.match(/Prepared\s+for\s+\n?\s*([A-Z][a-zA-Z\s]+?)(?:\n|Effective|Quote number)/);
   const name=nameMatch?nameMatch[1].trim().split('\n')[0].trim():filename.replace(/\.pdf$/i,'').replace(/_/g,' ');
 
-  // ── Monthly EFT ──
-  const eftMatch=t.match(/Monthly\s+EFT\s+\$?([\d,]+\.?\d*)\s+\$?([\d,]+\.?\d*)/i);
+  // ── Monthly EFT (Auto only — must NOT bleed in from Home section) ──
+  // Scope the search strictly to the "Auto quote details" section. If a quote's
+  // Auto plan only offers "1 Pay" (no Monthly EFT option), the whole-document
+  // search would otherwise match the Home section's Monthly EFT line instead —
+  // silently filling the wrong number into the AgencyZoom "Monthly Auto" field.
+  const autoSectionIdxEarly=t.search(/Auto\s+quote\s+details/i);
+  const homeSectionIdxEarly=t.search(/(?:Farmers\s+)?Home\s+quote\s+details/i);
+  let autoChunkEarly;
+  if(autoSectionIdxEarly>-1){
+    const autoEnd=homeSectionIdxEarly>autoSectionIdxEarly?homeSectionIdxEarly:autoSectionIdxEarly+4000;
+    autoChunkEarly=t.substring(autoSectionIdxEarly,autoEnd);
+  } else {
+    autoChunkEarly=t.substring(0,4000);
+  }
+  const eftMatch=autoChunkEarly.match(/Monthly\s+EFT\s+\$?([\d,]+\.?\d*)\s+\$?([\d,]+\.?\d*)/i);
   const monthlyEFT=eftMatch?parseFloat(eftMatch[2].replace(/,/g,'')):null;
+  const eftAutoMissing=!eftMatch;
+  if(eftAutoMissing) warnings.push('Monthly EFT auto not available use BW');
 
   // ── Dates — exactly 14 days from Prepared on ──
   const prepMatch=t.match(/Prepared\s+on\s+(\d{2}\/\d{2}\/\d{2,4})/i);
@@ -476,7 +491,7 @@ function analyzeQuote(text,filename){
   const azCoverageA=homeData.dwelling;
 
   const azChecklist={vehicles:azVehicles,monthly:azMonthly,sixMonths:az6months,
-    homeAnnual:azHomeAnnual,coverageA:azCoverageA};
+    homeAnnual:azHomeAnnual,coverageA:azCoverageA,eftAutoMissing:eftAutoMissing};
 
   const status=errors.length>0?'fail':warnings.length>0?'warn':'pass';
   return{filename,name,quoteType,monthlyEFT,vehicleCount,vehicles,drivers,
@@ -927,7 +942,7 @@ function buildAZPanel(r){
   let html="<div class='az-panel'>"
     +"<h4>📋 AgencyZoom Main Page</h4>"
     +(az.vehicles?azRow("Vehicles on Policy",az.vehicles,"veh"):"<div class='az-row'><span class='az-label'>Vehicles on Policy</span><span class='az-manual'>Not detected</span></div>")
-    +(az.monthly?azRow("Monthly Auto","$"+az.monthly,"meft"):"")
+    +(az.monthly?azRow("Monthly Auto","$"+az.monthly,"meft"):"<div class='az-row'><span class='az-label'>Monthly Auto</span><span class='az-manual'>⚠ Monthly Eft auto not available use BW</span></div>")
     +(az.sixMonths?azRow("6 Months Auto","$"+az.sixMonths,"6mo"):"");
   if(r.homeData&&r.homeData.isBundle){
     html+=(az.homeAnnual?azRow("Home Annual Price","$"+az.homeAnnual,"hann"):"")
