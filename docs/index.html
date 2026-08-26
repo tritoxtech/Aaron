@@ -503,21 +503,33 @@ function analyzeQuote(text,filename){
   const azMonthly=monthlyEFT?Math.round(monthlyEFT):null;
 
   // Auto_6months = 1 Pay amount WITHOUT fees
+  // IMPORTANT: use the complete Auto section (already isolated above as autoChunkEarly)
+  // so the Membership fee line is not missed on longer quotes.
   let az6months=null;
-  const autoSectionIdx=t.search(/Auto\s+quote\s+details/i);
-  const autoChunk=autoSectionIdx>-1?t.substring(autoSectionIdx,autoSectionIdx+4000):t.substring(0,4000);
-  // Pattern: "1 Pay $532.00 - $532.00" (Farmers) or "1 Pay $1,105.24 $0.00 $1,105.24" (Bristol West)
+  const autoChunk=autoChunkEarly || '';
+
+  // Patterns:
+  // Farmers:     1 Pay $1,981.00 - $1,981.00
+  // Bristol West:1 Pay $1,105.24 $0.00 $1,105.24
   const onePay1=autoChunk.match(/1\s+Pay\s+\$([\d,]+\.?\d*)\s+\$0\.00\s+\$([\d,]+\.?\d*)/i);
   const onePay2=autoChunk.match(/1\s+Pay\s+\$([\d,]+\.?\d*)\s+-\s+\$([\d,]+\.?\d*)/i);
   const onePay3=autoChunk.match(/1\s+Pay\s+\$([\d,]+\.?\d*)/i);
+
   let rawAuto6=null;
   if(onePay1) rawAuto6=parseFloat(onePay1[2].replace(/,/g,''));
   else if(onePay2) rawAuto6=parseFloat(onePay2[2].replace(/,/g,''));
   else if(onePay3) rawAuto6=parseFloat(onePay3[1].replace(/,/g,''));
-  // Subtract fees if present: "*Includes $60 in fees" or "*Includes $60 Membership fee"
+
+  // Subtract Auto fees from 1 Pay:
+  // e.g. $1,981 - $60 Membership fee = $1,921
   if(rawAuto6!==null){
-    const autoFeeMatch=autoChunk.match(/\*?Includes\s+\$([\d,]+)\s+(?:in\s+fees|Membership\s+fee)/i);
-    const autoFee=autoFeeMatch?parseFloat(autoFeeMatch[1].replace(/,/g,'')):0;
+    const autoFeeMatch=autoChunk.match(
+      /\*?Includes\s+\$([\d,]+(?:\.\d{1,2})?)\s+(?:in\s+fees|Membership\s+fee)/i
+    );
+    const autoFee=autoFeeMatch
+      ? parseFloat(autoFeeMatch[1].replace(/,/g,''))
+      : 0;
+
     az6months=Math.round(rawAuto6-autoFee);
   }
 
