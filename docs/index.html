@@ -353,10 +353,10 @@ function analyzeQuote(text,filename){
   const homeSectionIdxEarly=t.search(/(?:Farmers\s+)?Home\s+quote\s+details/i);
   let autoChunkEarly;
   if(autoSectionIdxEarly>-1){
-    const autoEnd=homeSectionIdxEarly>autoSectionIdxEarly?homeSectionIdxEarly:autoSectionIdxEarly+4000;
+    const autoEnd=homeSectionIdxEarly>autoSectionIdxEarly?homeSectionIdxEarly:autoSectionIdxEarly+12000;
     autoChunkEarly=t.substring(autoSectionIdxEarly,autoEnd);
   } else {
-    autoChunkEarly=t.substring(0,4000);
+    autoChunkEarly=t.substring(0,12000);
   }
   const eftMatch=autoChunkEarly.match(/Monthly\s+EFT\s+\$?([\d,]+\.?\d*)\s+\$?([\d,]+\.?\d*)/i);
   const monthlyEFT=eftMatch?parseFloat(eftMatch[2].replace(/,/g,'')):null;
