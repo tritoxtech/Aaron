@@ -344,24 +344,57 @@ function analyzeQuote(text,filename){
   const nameMatch=t.match(/Prepared\s+for\s+\n?\s*([A-Z][a-zA-Z\s]+?)(?:\n|Effective|Quote number)/);
   const name=nameMatch?nameMatch[1].trim().split('\n')[0].trim():filename.replace(/\.pdf$/i,'').replace(/_/g,' ');
 
-  // ── Monthly EFT (Auto only — must NOT bleed in from Home section) ──
-  // Scope the search strictly to the "Auto quote details" section. If a quote's
-  // Auto plan only offers "1 Pay" (no Monthly EFT option), the whole-document
-  // search would otherwise match the Home section's Monthly EFT line instead —
-  // silently filling the wrong number into the AgencyZoom "Monthly Auto" field.
+  // ── Monthly EFT — AUTO ONLY ──
+  // Rules:
+  // 1) Read only from the Auto quote details section.
+  // 2) Stop before any Home quote summary/details section so Home EFT can never bleed into Auto.
+  // 3) If Auto explicitly uses Monthly EFT, capture the installment amount.
+  // 4) If Auto is Paid in full / 1 Pay only, keep monthlyEFT=null and show the BW warning.
   const autoSectionIdxEarly=t.search(/Auto\s+quote\s+details/i);
-  const homeSectionIdxEarly=t.search(/(?:Farmers\s+)?Home\s+quote\s+details/i);
-  let autoChunkEarly;
+
+  // Find the FIRST Home section that occurs after Auto details (summary OR details).
+  let homeSectionIdxEarly=-1;
   if(autoSectionIdxEarly>-1){
-    const autoEnd=homeSectionIdxEarly>autoSectionIdxEarly?homeSectionIdxEarly:autoSectionIdxEarly+12000;
-    autoChunkEarly=t.substring(autoSectionIdxEarly,autoEnd);
-  } else {
-    autoChunkEarly=t.substring(0,12000);
+    const afterAuto=t.substring(autoSectionIdxEarly);
+    const relHomeIdx=afterAuto.search(/(?:Farmers\s+)?Home\s+quote\s+(?:summary|details)/i);
+    if(relHomeIdx>-1) homeSectionIdxEarly=autoSectionIdxEarly+relHomeIdx;
   }
-  const eftMatch=autoChunkEarly.match(/Monthly\s+EFT\s+\$?([\d,]+\.?\d*)\s+\$?([\d,]+\.?\d*)/i);
-  const monthlyEFT=eftMatch?parseFloat(eftMatch[2].replace(/,/g,'')):null;
-  const eftAutoMissing=!eftMatch;
-  if(eftAutoMissing) warnings.push('Monthly EFT auto not available use BW');
+
+  let autoChunkEarly='';
+  if(autoSectionIdxEarly>-1){
+    const autoEnd=homeSectionIdxEarly>autoSectionIdxEarly?homeSectionIdxEarly:t.length;
+    autoChunkEarly=t.substring(autoSectionIdxEarly,autoEnd);
+  }
+
+  let monthlyEFT=null;
+
+  // Method 1 — Options summary, e.g.:
+  // Installments $1,420.88/mo
+  // Pay plan Monthly EFT
+  const autoOptionEFT=autoChunkEarly.match(
+    /Installments\s+\$?([\d,]+(?:\.\d{1,2})?)\s*\/?\s*mo[\s\S]{0,180}?Pay\s+plan\s+Monthly\s+EFT/i
+  );
+  if(autoOptionEFT){
+    monthlyEFT=parseFloat(autoOptionEFT[1].replace(/,/g,''));
+  }
+
+  // Method 2 — Payment plans table, e.g.:
+  // Monthly EFT $1,353.70 $1,420.88 $8,398.10
+  //                  due today   installment   total
+  if(monthlyEFT===null){
+    const autoPaymentTableEFT=autoChunkEarly.match(
+      /Monthly\s+EFT\s+\$?([\d,]+(?:\.\d{1,2})?)\s+\$?([\d,]+(?:\.\d{1,2})?)(?:\s+\$?[\d,]+(?:\.\d{1,2})?)?/i
+    );
+    if(autoPaymentTableEFT){
+      monthlyEFT=parseFloat(autoPaymentTableEFT[2].replace(/,/g,''));
+    }
+  }
+
+  const eftAutoMissing=monthlyEFT===null||Number.isNaN(monthlyEFT);
+  if(eftAutoMissing){
+    monthlyEFT=null;
+    warnings.push('Monthly EFT auto not available use BW');
+  }
 
   // ── Dates — exactly 14 days from Prepared on ──
   const prepMatch=t.match(/Prepared\s+on\s+(\d{2}\/\d{2}\/\d{2,4})/i);
