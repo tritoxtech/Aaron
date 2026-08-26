@@ -426,12 +426,16 @@ function analyzeQuote(text,filename){
   else warnings.push('Quote type could not be identified');
 
   // ── Premium Threshold ──
+  // Monthly EFT limits apply ONLY to 1, 2, or 3 vehicles.
+  // 1 vehicle = $400 max, 2 vehicles = $800 max, 3 vehicles = $1,000 max.
+  // 4+ vehicles = NO Monthly EFT threshold / never PUT IN STOP for premium amount.
   let premiumOk=true,putInStop=false;
-  if(monthlyEFT!==null&&vehicleCount>0){
+  if(monthlyEFT!==null && vehicleCount>=1 && vehicleCount<=3){
     const limits={1:400,2:800,3:1000};
-    const limit=limits[Math.min(vehicleCount,3)]||1000;
+    const limit=limits[vehicleCount];
     if(monthlyEFT>limit){
-      premiumOk=false;putInStop=true;
+      premiumOk=false;
+      putInStop=true;
       errors.push(`⛔ PUT IN STOP — Monthly EFT $${monthlyEFT.toFixed(2)} exceeds $${limit} limit for ${vehicleCount} vehicle${vehicleCount>1?'s':''}`);
     }
   }
@@ -901,12 +905,19 @@ function buildDetails(r){
   const discOk=r.quoteType==='Farmers'?!r.errors.some(e=>/Auto\/Home or Condo/i.test(e)):
     r.quoteType==='Farmer-Bristol'?!r.errors.some(e=>/Auto\/Farmers Home/i.test(e)):
     !r.errors.some(e=>/Paperless|should NOT/i.test(e));
-  // Premium
+  // Premium — limits apply only to 1–3 vehicles
   const limits={1:400,2:800,3:1000};
-  const limit=limits[Math.min(r.vehicleCount,3)]||1000;
-  const premRow=r.monthlyEFT
-    ?ck(c.premiumOk,`Monthly EFT vs $${limit} (${r.vehicleCount} vehicle${r.vehicleCount!==1?'s':''})`,`$${r.monthlyEFT.toFixed(2)}/mo`)
-    :`<div class="check-item"><span class="ci-icon ci-warn">⚠</span><span class="ci-label">Monthly EFT not found</span></div>`;
+  let premRow;
+  if(r.monthlyEFT){
+    if(r.vehicleCount>=1 && r.vehicleCount<=3){
+      const limit=limits[r.vehicleCount];
+      premRow=ck(c.premiumOk,`Monthly EFT vs $${limit} (${r.vehicleCount} vehicle${r.vehicleCount!==1?'s':''})`,`$${r.monthlyEFT.toFixed(2)}/mo`);
+    } else {
+      premRow=ck(true,`Monthly EFT — No limit for ${r.vehicleCount} vehicles`,`$${r.monthlyEFT.toFixed(2)}/mo`);
+    }
+  } else {
+    premRow=`<div class="check-item"><span class="ci-icon ci-warn">⚠</span><span class="ci-label">Monthly EFT not found</span></div>`;
+  }
 
   return `<div class="row-details-grid">
     <div class="detail-group">
