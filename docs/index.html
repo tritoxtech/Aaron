@@ -1224,7 +1224,7 @@ function showTMScript(){
   const script = `// ==UserScript==
 // @name         TritoX AgencyZoom Auto-Fill
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      3.1
 // @description  Auto-fill AgencyZoom fields from TritoX QC data
 // @match        https://app.agencyzoom.com/*
 // @match        https://tritoxtech.github.io/*
@@ -1268,13 +1268,29 @@ function showTMScript(){
     let data;
     try{ data = JSON.parse(raw); }catch(e){ return; }
     if(!data || !data._name) return;
-    const age = Date.now() - (data._ts || 0);
+    const buttonDataTs = data._ts || 0;
+
+    // Do not recreate a button that was already filled or expired.
+    if(buttonDataTs <= filledTs || buttonDataTs <= expiredTs) return;
+
+    const age = Date.now() - buttonDataTs;
     if(age > 7200000) return;
+
     const btn = document.createElement('div');
     btn.id = 'tritox-fill-btn';
     btn.style.cssText = 'position:fixed;top:80px;right:20px;z-index:99999;background:linear-gradient(135deg,#00d4ff,#7b2fff);color:#fff;padding:10px 16px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;box-shadow:0 4px 20px rgba(0,212,255,0.4);font-family:sans-serif;text-align:center;min-width:160px;';
     btn.innerHTML = '🚀 Fill from TritoX<br><span style="font-size:11px;font-weight:400;opacity:0.9;">' + data._name + '</span>';
+
+    // Initial Fill button is visible for a maximum of 7 seconds if untouched.
+    let autoHideTimer = null;
+
     btn.addEventListener('click', function(){
+      // User interacted in time, so stop the idle 7-second timer.
+      if(autoHideTimer){
+        clearTimeout(autoHideTimer);
+        autoHideTimer = null;
+      }
+
       // Show confirmation popup
       const overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999999;display:flex;align-items:center;justify-content:center;';
@@ -1295,6 +1311,9 @@ function showTMScript(){
       // Cancel
       document.getElementById('tritox-cancel').addEventListener('click', function(){
         overlay.remove();
+        expiredTs = Math.max(expiredTs, buttonDataTs);
+        GM_setValue('tritox_expired_ts', expiredTs);
+        if(btn.isConnected) btn.remove();
       });
 
       // Confirm
@@ -1347,10 +1366,26 @@ function showTMScript(){
 
       // Click outside to cancel
       overlay.addEventListener('click', function(e){
-        if(e.target === overlay) overlay.remove();
+        if(e.target === overlay){
+          overlay.remove();
+          expiredTs = Math.max(expiredTs, buttonDataTs);
+          GM_setValue('tritox_expired_ts', expiredTs);
+          if(btn.isConnected) btn.remove();
+        }
       });
     });
+
     document.body.appendChild(btn);
+
+    // If untouched, automatically remove the Fill button after 7 seconds.
+    // Save the expired timestamp so the 1.5-second checker cannot recreate it.
+    autoHideTimer = setTimeout(function(){
+      if(btn.isConnected){
+        btn.remove();
+      }
+      expiredTs = Math.max(expiredTs, buttonDataTs);
+      GM_setValue('tritox_expired_ts', expiredTs);
+    }, 7000);
   }
 
   function fillText(id, val){
@@ -1421,6 +1456,10 @@ function showTMScript(){
 
   let lastCheck = '';
   let filledTs = 0; // timestamp of last fill action
+
+  // Timestamp of the last Fill button that expired/cancelled.
+  // Persisted so the same old PDF does not reappear after an AgencyZoom reload.
+  let expiredTs = Number(GM_getValue('tritox_expired_ts', 0)) || 0;
   
   setInterval(function(){
     // Get current GM data
@@ -1435,8 +1474,8 @@ function showTMScript(){
     
     // If GM data is newer than last fill → new PDF processed → show button
     const gmTs = gmData._ts || 0;
-    if(gmTs <= filledTs){
-      // Same or older data — already filled this PDF
+    if(gmTs <= filledTs || gmTs <= expiredTs){
+      // Same or older data — already filled, cancelled, or expired.
       return;
     }
     
