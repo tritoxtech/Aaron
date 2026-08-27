@@ -456,7 +456,7 @@ function analyzeQuote(text,filename){
 
   // ── Bundle Detection & Home Checks ──
   const isBundle=/Farmers\s+[Hh]ome\s+quote/i.test(t)||/Farmers\s+Home\s+quote\s+summary/i.test(t);
-  let homeData={isBundle,ppValOk:true,roofValOk:true,dwelling:null,homePay1:null};
+  let homeData={isBundle,ppValOk:true,roofValOk:true,dwellingSettlementOk:true,dwellingSettlementOption:'',dwelling:null,homePay1:null};
   if(isBundle){
     // Personal Property Valuation
     homeData.ppValOk=/Personal\s+property\s+valuation\s+Replacement\s+cost/i.test(t);
@@ -464,6 +464,22 @@ function analyzeQuote(text,filename){
     // Roof Valuation
     homeData.roofValOk=/Roof\s+valuation\s+Replacement\s+cost/i.test(t);
     if(!homeData.roofValOk) errors.push('Home: Roof Valuation must be Replacement Cost');
+
+    // Dwelling Settlement Option — MUST always be Coverage A.
+    // Any other option (for example "Reduced loss settlement") must be flagged,
+    // and Home Coverage A must NOT be auto-filled into AgencyZoom.
+    const dwellingSettlementMatch=t.match(
+      /Dwelling\s+settlement\s+option\s+([\s\S]{0,100}?)(?=Personal\s+property\s+valuation|Roof\s+valuation|Deductibles|$)/i
+    );
+    homeData.dwellingSettlementOption=dwellingSettlementMatch
+      ? dwellingSettlementMatch[1].replace(/\s+/g,' ').trim()
+      : 'Not detected';
+    homeData.dwellingSettlementOk=/^Coverage\s*A\b/i.test(homeData.dwellingSettlementOption);
+
+    if(!homeData.dwellingSettlementOk){
+      errors.push('Home: Dwelling settlement option must be Coverage A — Fill Home Coverage manually');
+    }
+
     // Dwelling amount (Coverage A)
     const dwellingMatch=t.match(/Dwelling\s+\$([\d,]+)/i);
     homeData.dwelling=dwellingMatch?parseInt(dwellingMatch[1].replace(/,/g,'')):null;
@@ -536,8 +552,9 @@ function analyzeQuote(text,filename){
   // Home Annual — round
   const azHomeAnnual=homeData.homePay1?Math.round(homeData.homePay1):null;
 
-  // Home Coverage A — dwelling amount
-  const azCoverageA=homeData.dwelling;
+  // Home Coverage A — only auto-fill when Dwelling Settlement Option is exactly Coverage A.
+  // Otherwise leave it blank so the user fills Home Coverage manually.
+  const azCoverageA=homeData.dwellingSettlementOk?homeData.dwelling:null;
 
   const azChecklist={vehicles:azVehicles,monthly:azMonthly,sixMonths:az6months,
     homeAnnual:azHomeAnnual,coverageA:azCoverageA,eftAutoMissing:eftAutoMissing};
@@ -979,6 +996,9 @@ function buildHomePanel(r){
     +(h.roofValOk
       ?'<div class="check-item"><span class="ci-icon ci-ok">✓</span><span class="ci-label">Roof Valuation</span><span class="ci-val ok">Replacement Cost</span></div>'
       :'<div class="check-item"><span class="ci-icon ci-fail">✗</span><span class="ci-label">Roof Valuation</span><span class="ci-val bad">NOT Replacement Cost</span></div>')
+    +(h.dwellingSettlementOk
+      ?'<div class="check-item"><span class="ci-icon ci-ok">✓</span><span class="ci-label">Dwelling Settlement Option</span><span class="ci-val ok">Coverage A</span></div>'
+      :'<div class="check-item"><span class="ci-icon ci-fail">✗</span><span class="ci-label">Dwelling Settlement Option</span><span class="ci-val bad">'+(h.dwellingSettlementOption||'Not detected')+'</span></div>')
     +(h.dwelling?'<div class="check-item"><span class="ci-icon ci-ok">✓</span><span class="ci-label">Dwelling (Cov A)</span><span class="ci-val neutral">$'+h.dwelling.toLocaleString()+'</span></div>':'')
     +'</div></div>';
 }
@@ -1002,7 +1022,11 @@ function buildAZPanel(r){
     +(az.sixMonths?azRow("6 Months Auto","$"+az.sixMonths,"6mo"):"");
   if(r.homeData&&r.homeData.isBundle){
     html+=(az.homeAnnual?azRow("Home Annual Price","$"+az.homeAnnual,"hann"):"")
-      +(az.coverageA?azRow("Home Coverage A","$"+az.coverageA.toLocaleString(),"hcova"):"");
+      +(az.coverageA
+        ?azRow("Home Coverage A","$"+az.coverageA.toLocaleString(),"hcova")
+        :(!r.homeData.dwellingSettlementOk
+          ?"<div class='az-row'><span class='az-label'>Home Coverage A</span><span class='az-manual'>⚠ Fill Home Coverage manually</span></div>"
+          :""));
   }
   if(r.quoteType==='Farmers'||r.quoteType==='Farmer-Bristol'){
     html+="<div class='az-row'><span class='az-label'>Star 1-3</span><span class='az-manual'>⚠ Fill manually</span></div>";
