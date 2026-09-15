@@ -499,25 +499,42 @@ function analyzeQuote(text,filename){
     // Dwelling amount (Coverage A)
     const dwellingMatch=t.match(/Dwelling\s+\$([\d,]+)/i);
     homeData.dwelling=dwellingMatch?parseInt(dwellingMatch[1].replace(/,/g,'')):null;
-    // Home 1 Pay amount WITHOUT fees
-    const homeSectionIdx=t.search(/Farmers\s+Home\s+quote\s+(?:summary|details)/i);
-    const homeChunk=homeSectionIdx>-1?t.substring(homeSectionIdx,homeSectionIdx+4000):t;
-    const home1PayMatch=homeChunk.match(/1\s+Pay\s+\$([\d,]+\.?\d*)\s+-?\s*\$([\d,]+\.?\d*)/i)
-      ||homeChunk.match(/1\s+Pay\s+\$([\d,]+\.?\d*)/i);
-    let rawHomePay=null;
-    if(home1PayMatch){
-      rawHomePay=parseFloat((home1PayMatch[2]||home1PayMatch[1]).replace(/,/g,''));
+    // Home annual amount WITHOUT fees. PDF.js can split four-digit amounts like
+    // "$1,023.00" into "$1, 023.00", so normalize those item-boundary spaces first.
+    // Start at Home quote details to prevent the Auto payment plan being selected.
+    const normalizedMoneyText=t
+      .replace(/(\d),\s+(?=\d{3}(?:\D|$))/g,'$1,')
+      .replace(/\$\s+(?=\d)/g,'$');
+    const homeDetailsIdx=normalizedMoneyText.search(/Home\s+quote\s+details/i);
+    const homeChunk=homeDetailsIdx>-1
+      ? normalizedMoneyText.substring(homeDetailsIdx,homeDetailsIdx+14000)
+      : normalizedMoneyText;
+
+    // "Term Premium" is already the annual premium excluding fees (preferred).
+    const termPremiumMatch=homeChunk.match(
+      /Term\s+Premium\s+\$([\d,]+(?:\.\d{1,2})?)(?:\s*\/\s*12\s*-?\s*mo)?/i
+    );
+    let rawHomePay=termPremiumMatch
+      ? parseFloat(termPremiumMatch[1].replace(/,/g,''))
+      : null;
+
+    // Fallback for layouts that only show the 1 Pay total including fees.
+    if(rawHomePay===null){
+      const home1PayMatch=homeChunk.match(
+        /1\s+Pay\s+\$([\d,]+(?:\.\d{1,2})?)\s+-?\s*\$([\d,]+(?:\.\d{1,2})?)/i
+      ) || homeChunk.match(/1\s+Pay\s+\$([\d,]+(?:\.\d{1,2})?)/i);
+      if(home1PayMatch){
+        rawHomePay=parseFloat((home1PayMatch[2]||home1PayMatch[1]).replace(/,/g,''));
+        const homeFeeMatch=homeChunk.match(
+          /\*?Includes\s+\$([\d,]+(?:\.\d{1,2})?)\s+(?:in\s+fees|Membership\s+fee)/i
+        );
+        const homeFee=homeFeeMatch
+          ? parseFloat(homeFeeMatch[1].replace(/,/g,''))
+          : 0;
+        rawHomePay-=homeFee;
+      }
     }
-    if(!rawHomePay){
-      const tpMatch=homeChunk.match(/Total\s+premium[\s\S]{0,5}\$([\d,]+)/i);
-      if(tpMatch) rawHomePay=parseFloat(tpMatch[1].replace(/,/g,''));
-    }
-    // Subtract home fees if present
-    if(rawHomePay!==null){
-      const homeFeeMatch=homeChunk.match(/\*?Includes\s+\$([\d,]+)\s+(?:in\s+fees|Membership\s+fee)/i);
-      const homeFee=homeFeeMatch?parseFloat(homeFeeMatch[1].replace(/,/g,'')):0;
-      homeData.homePay1=rawHomePay-homeFee;
-    }
+    homeData.homePay1=rawHomePay;
   }
 
   // ── AgencyZoom Checklist Data ──
