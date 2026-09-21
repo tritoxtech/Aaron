@@ -424,7 +424,7 @@ function analyzeQuote(text,filename){
   const eftAutoMissing=monthlyEFT===null||Number.isNaN(monthlyEFT);
   if(eftAutoMissing){
     monthlyEFT=null;
-    warnings.push('Monthly EFT auto not available use BW');
+    errors.push('Monthly EFT auto not available — use BW');
   }
 
   // ── Dates — exactly 14 days from Prepared on ──
@@ -1021,7 +1021,7 @@ function buildDetails(r){
       premRow=ck(true,`Monthly EFT — No limit for ${r.vehicleCount} vehicles`,`$${r.monthlyEFT.toFixed(2)}/mo`);
     }
   } else {
-    premRow=`<div class="check-item"><span class="ci-icon ci-warn">⚠</span><span class="ci-label">Monthly EFT not found</span></div>`;
+    premRow=`<div class="check-item"><span class="ci-icon ci-fail">✗</span><span class="ci-label">Monthly EFT auto not available — use BW</span></div>`;
   }
 
   return `<div class="row-details-grid">
@@ -1091,7 +1091,7 @@ function buildAZPanel(r){
   let html="<div class='az-panel'>"
     +"<h4>📋 AgencyZoom Main Page</h4>"
     +(az.vehicles?azRow("Vehicles on Policy",az.vehicles,"veh"):"<div class='az-row'><span class='az-label'>Vehicles on Policy</span><span class='az-manual'>Not detected</span></div>")
-    +(az.monthly?azRow("Monthly Auto","$"+az.monthly,"meft"):"<div class='az-row'><span class='az-label'>Monthly Auto</span><span class='az-manual'>⚠ Monthly Eft auto not available use BW</span></div>")
+    +(az.monthly?azRow("Monthly Auto","$"+az.monthly,"meft"):"<div class='az-row'><span class='az-label'>Monthly Auto</span><span class='ci-fail'>✗ Monthly EFT auto not available — use BW</span></div>")
     +(az.sixMonths?azRow("6 Months Auto","$"+az.sixMonths,"6mo"):"");
   if(r.homeData&&r.homeData.isBundle){
     html+=(az.homeAnnual?azRow("Home Annual Price","$"+az.homeAnnual,"hann"):"")
